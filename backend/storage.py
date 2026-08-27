@@ -13,13 +13,14 @@ import secrets
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import quote
 
 import httpx
 
 from .config import settings
 
-BLOB_API = "https://blob.vercel-storage.com"
-BLOB_API_VERSION = "7"
+BLOB_API = "https://vercel.com/api/blob"
+BLOB_API_VERSION = "12"
 _UNSAFE = re.compile(r"[^A-Za-z0-9._-]+")
 
 
@@ -59,12 +60,13 @@ def _save_local(key: str, data: bytes, content_type: str) -> SavedObject:
 
 def _save_blob(key: str, data: bytes, content_type: str) -> SavedObject:
     response = httpx.put(
-        f"{BLOB_API}/{key}",
+        f"{BLOB_API}/?pathname={quote(key, safe='')}",
         content=data,
         headers={
             "authorization": f"Bearer {settings.blob_token}",
             "x-api-version": BLOB_API_VERSION,
             "x-content-type": content_type,
+            "x-vercel-blob-access": "public",
             "x-add-random-suffix": "1",
             "x-cache-control-max-age": "31536000",
         },
