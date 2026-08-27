@@ -5,6 +5,10 @@ blob  -> Vercel Blob over its REST API (production)
 
 The active backend is chosen in config.py: it is "blob" whenever
 BLOB_READ_WRITE_TOKEN is present, otherwise "local".
+
+The blob calls mirror what @vercel/blob sends on the wire: PUT to
+"<api>/?pathname=<url-encoded key>" with the store id passed as its own
+header alongside the bearer token.
 """
 from __future__ import annotations
 
@@ -24,6 +28,10 @@ BLOB_API_VERSION = "12"
 _UNSAFE = re.compile(r"[^A-Za-z0-9._-]+")
 
 
+class BlobError(RuntimeError):
+    """A Vercel Blob call failed; carries the API's own explanation."""
+
+
 @dataclass(slots=True)
 class SavedObject:
     backend: str
@@ -41,6 +49,33 @@ def safe_filename(name: str) -> str:
 
 def _object_path(filename: str) -> str:
     return f"uploads/{secrets.token_hex(8)}-{safe_filename(filename)}"
+
+
+def _store_id(token: str) -> str:
+    """Read-write tokens are "vercel_blob_rw_<storeId>_<secret>"."""
+    parts = token.split("_")
+    return parts[3] if len(parts) > 3 else ""
+
+
+def _blob_headers() -> dict[str, str]:
+    token = settings.blob_token or ""
+    headers = {
+        "authorization": f"Bearer {token}",
+        "x-api-version": BLOB_API_VERSION,
+    }
+    store_id = _store_id(token)
+    if store_id:
+        headers["x-vercel-blob-store-id"] = store_id
+    return headers
+
+
+def _blob_error(response: httpx.Response) -> BlobError:
+    try:
+        payload = response.json().get("error") or {}
+        detail = payload.get("message") or payload.get("code") or response.text
+    except ValueError:
+        detail = response.text
+    return BlobError(f"Vercel Blob {response.status_code}: {detail}".strip())
 
 
 def save(filename: str, data: bytes, content_type: str) -> SavedObject:
@@ -63,8 +98,7 @@ def _save_blob(key: str, data: bytes, content_type: str) -> SavedObject:
         f"{BLOB_API}/?pathname={quote(key, safe='')}",
         content=data,
         headers={
-            "authorization": f"Bearer {settings.blob_token}",
-            "x-api-version": BLOB_API_VERSION,
+            **_blob_headers(),
             "x-content-type": content_type,
             "x-vercel-blob-access": "public",
             "x-add-random-suffix": "1",
@@ -72,7 +106,8 @@ def _save_blob(key: str, data: bytes, content_type: str) -> SavedObject:
         },
         timeout=60.0,
     )
-    response.raise_for_status()
+    if response.is_error:
+        raise _blob_error(response)
     body = response.json()
     return SavedObject(
         backend="blob",
@@ -99,10 +134,7 @@ def delete(backend: str, storage_key: str) -> None:
         httpx.post(
             f"{BLOB_API}/delete",
             json={"urls": [storage_key]},
-            headers={
-                "authorization": f"Bearer {settings.blob_token}",
-                "x-api-version": BLOB_API_VERSION,
-            },
+            headers=_blob_headers(),
             timeout=30.0,
         )
         return
