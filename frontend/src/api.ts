@@ -10,6 +10,7 @@ import type {
 } from "./types";
 
 const TOKEN_KEY = "sftp.token";
+export const MAX_SERVERLESS_UPLOAD_BYTES = 4 * 1024 * 1024;
 
 export class ApiError extends Error {
   status: number;

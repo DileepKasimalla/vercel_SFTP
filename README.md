@@ -166,7 +166,7 @@ app from folder storage to Vercel Blob with no code change.
 | `JWT_SECRET` | **yes** | Long random string. Changing it signs everyone out. |
 | `BOOTSTRAP_TOKEN` | recommended | When set, the bootstrap page also demands this value, so a stranger cannot claim the admin account on your public URL before you do. |
 | `JWT_EXPIRE_MINUTES` | no | Session length, default `480`. |
-| `MAX_UPLOAD_MB` | no | Per-file limit, default `25`. See the size note below. |
+| `MAX_UPLOAD_MB` | no | Per-file limit, default `4`. Keep it at or below `4` on Vercel. |
 | `RETENTION_DAYS` | no | Days before a file is deleted, default `5`. |
 | `CRON_SECRET` | recommended | Vercel sets this when you add a cron job; the cleanup endpoint requires it (an admin token also works). |
 | `DOWNLOAD_TOKEN_SECONDS` | no | Download-link lifetime, default `120`. |
@@ -194,11 +194,11 @@ You land on `/bootstrap`. Create the administrator, and the portal is live.
 
 ## Things worth knowing
 
-**Upload size on Vercel.** A serverless function's request body is capped at **4.5 MB**, so
-that is the practical per-file ceiling in production regardless of `MAX_UPLOAD_MB`. Locally
-the limit is whatever you set. To move larger files on Vercel you need client-side direct
-uploads to Blob (`@vercel/blob/client`), which would replace the `POST /api/admin/files`
-handler with a token-issuing endpoint.
+**Upload size on Vercel.** A serverless function's request body is capped at **4.5 MB**.
+The browser therefore uploads each file separately and rejects files over **4 MB**, leaving
+room for multipart and form-field overhead. Locally the limit is whatever you set. To move
+larger files on Vercel you need client-side direct uploads to Blob (`@vercel/blob/client`),
+which would replace the `POST /api/admin/files` handler with a token-issuing endpoint.
 
 **Downloads.** A browser navigation cannot carry an `Authorization` header, so the client
 first calls `POST /api/files/{id}/download-link`, which checks access and returns a URL

@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
-import { api, downloadFile } from "../api";
+import { api, downloadFile, MAX_SERVERLESS_UPLOAD_BYTES } from "../api";
 import {
   Banner,
   EmptyState,
@@ -70,14 +70,26 @@ export default function FilesPanel({ files, users, loading, reload }: Props) {
       setError("Pick at least one user, or share the upload with everyone.");
       return;
     }
+    const oversized = selected.find((file) => file.size > MAX_SERVERLESS_UPLOAD_BYTES);
+    if (oversized) {
+      setError(`${oversized.name} is larger than the 4 MB Vercel upload limit.`);
+      return;
+    }
 
     setBusy(true);
     try {
-      const response = await api.admin.upload(selected, notes, shareWithAll ? [] : assignedIds);
-      const parts = [`Uploaded ${response.uploaded.length} file(s).`];
-      if (response.failed.length) {
+      const responses = [];
+      for (const file of selected) {
+        responses.push(
+          await api.admin.upload([file], notes, shareWithAll ? [] : assignedIds),
+        );
+      }
+      const uploaded = responses.flatMap((response) => response.uploaded);
+      const failed = responses.flatMap((response) => response.failed);
+      const parts = [`Uploaded ${uploaded.length} file(s).`];
+      if (failed.length) {
         parts.push(
-          "Skipped: " + response.failed.map((f) => `${f.name} (${f.error})`).join(", ") + ".",
+          "Skipped: " + failed.map((f) => `${f.name} (${f.error})`).join(", ") + ".",
         );
       }
       setResult(parts.join(" "));

@@ -56,7 +56,7 @@ class Settings:
         self.local_storage_dir: Path = Path(
             _first_env("LOCAL_STORAGE_DIR") or str(REPO_ROOT / "storage")
         )
-        self.max_upload_mb: int = int(_first_env("MAX_UPLOAD_MB") or 25)
+        self.max_upload_mb: int = int(_first_env("MAX_UPLOAD_MB") or 4)
 
         # Every file is deleted this many days after it was uploaded, whether or
         # not anyone downloaded it. See retention.py.
