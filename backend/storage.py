@@ -75,7 +75,10 @@ def _blob_error(response: httpx.Response) -> BlobError:
         detail = payload.get("message") or payload.get("code") or response.text
     except ValueError:
         detail = response.text
-    return BlobError(f"Vercel Blob {response.status_code}: {detail}".strip())
+    # The store id is not a secret - it is the hostname of every blob in the
+    # store - and naming it turns "Store not found" into a one-glance diagnosis.
+    store = _store_id(settings.blob_token or "") or "<none>"
+    return BlobError(f"Vercel Blob {response.status_code}: {detail} (store {store})".strip())
 
 
 def save(filename: str, data: bytes, content_type: str) -> SavedObject:

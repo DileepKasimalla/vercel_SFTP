@@ -38,6 +38,9 @@ class UserOut(BaseModel):
     must_change_password: bool
     created_at: datetime
     last_login_at: datetime | None = None
+    # Only populated on the login response: the sign-in *before* this one, so the
+    # dashboard can greet with "User last login time is ...".
+    previous_login_at: datetime | None = None
 
 
 class TokenResponse(BaseModel):

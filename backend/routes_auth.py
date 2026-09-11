@@ -103,13 +103,16 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse
             ),
         )
 
+    previous_login = user.last_login_at
     user.last_login_at = utcnow()
     db.commit()
     db.refresh(user)
+    out = UserOut.model_validate(user)
+    out.previous_login_at = previous_login
     return TokenResponse(
         access_token=create_access_token(user),
         expires_in=settings.jwt_expire_minutes * 60,
-        user=UserOut.model_validate(user),
+        user=out,
     )
 
 

@@ -3,6 +3,10 @@
 A two-door file distribution portal: an **administrator** publishes files and manages
 accounts, and **users** sign in to collect the files shared with them.
 
+The UI is styled after the classic **FedEx Net (FTN)** portal: white header with the wordmark
+and a centred title (`FTN-Prod`, override with `VITE_PORTAL_TITLE` at build time), a purple
+rule, a grey navigation column with underlined links, and plain-Arial screens.
+
 - **Backend** — Python 3.11+ / FastAPI, SQLAlchemy, JWT auth
 - **Frontend** — React 18 + TypeScript, Vite, React Router
 - **Database** — local Postgres in development, Neon on Vercel
@@ -19,18 +23,23 @@ Both swaps are automatic: the app reads `DATABASE_URL` and picks Blob storage as
 `/bootstrap`, where the first admin account is created. The endpoint closes permanently the
 moment an admin exists, and a second attempt returns `409`.
 
-**2. Admin login** (`/admin/login`) opens a dashboard with two tabs:
+**2. Admin login** (`/admin/login`) lands on the event screen ("Login Successful", last
+login time). The **Administration** nav entry expands to:
 
-- **Users** — create accounts (with a generated or a typed password), reset any user's
-  password, disable/enable, delete. Issued passwords are shown exactly once, with a copy
-  button.
-- **Files** — drag-and-drop or browse to upload **one or many files at a time**, optionally
-  with a note. Files go to every user by default, or you can target specific users. The tab
-  also lists everything published, with download and delete.
+- **Manage Users** — create accounts (with a generated or a typed password), reset any
+  user's password, disable/enable, delete. Issued passwords are shown exactly once, with a
+  copy button.
+- **Manage Documents** — drag-and-drop or browse to upload **one or many files at a time**,
+  optionally with a note. Files go to every user by default, or you can target specific
+  users. The screen also lists everything published, with download and delete.
 
-**3. User login** (`/login`) opens a dashboard listing the files shared with that user, each
-with a Download button. Users who are still on an admin-issued password are prompted to set
-their own.
+**3. User login** (`/login`) lands on the same event screen. **Transfer Doc** expands to
+**Send Doc** (informational — mailboxes are receive-only) and **Receive Doc**, which shows the
+*Receive Documents* form (receiver nickname, document state Unextracted / Extracted / All,
+sort order, row count). **Ok** opens *Download Documents*: one radio-selectable row per file
+with sender, receiver, application, test indicator, name, size, mailbox date/time and state,
+plus **Download / Back / Cancel**. Users still on an admin-issued password land on
+**Change Password** first.
 
 **4. File lifecycle.** Two rules run automatically:
 
