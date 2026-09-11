@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { api, tokenStore } from "./api";
+import { api, previousLoginStore, tokenStore } from "./api";
 import type { Role, TokenResponse, User } from "./types";
 
 interface AuthValue {
@@ -37,6 +37,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const adopt = useCallback((session: TokenResponse) => {
     tokenStore.set(session.access_token);
+    previousLoginStore.set(session.user.previous_login_at);
     setUser(session.user);
     return session.user;
   }, []);

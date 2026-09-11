@@ -23,16 +23,34 @@ export function EmptyState({ title, hint }: { title: string; hint?: string }) {
   );
 }
 
-export function Brand({ subtitle }: { subtitle?: string }) {
+/** The FedEx wordmark shown at the top-left of every screen. */
+export function Logo() {
   return (
-    <div className="brand">
-      <span className="brand__mark">
-        <span className="brand__fed">Fed</span>
-        <span className="brand__ex">Ex</span>
-      </span>
-      <span className="brand__title">SFTP Portal</span>
-      {subtitle ? <span className="brand__subtitle">{subtitle}</span> : null}
+    <span className="logo" aria-label="FedEx">
+      <span className="logo__fed">Fed</span>
+      <span className="logo__ex">Ex</span>
+      <span className="logo__reg">®</span>
+    </span>
+  );
+}
+
+/** "FedEx Net®" product heading used at the top of every content screen. */
+export function Product({ hero = false }: { hero?: boolean }) {
+  return (
+    <div className={`product ${hero ? "product--hero" : ""}`}>
+      FedEx Net<sup>®</sup>
     </div>
+  );
+}
+
+/** Timestamp in the FTN style: "2026-09-10 09:35:07.0" (local time). */
+export function formatStamp(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "—";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return (
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ` +
+    `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}.0`
   );
 }
 

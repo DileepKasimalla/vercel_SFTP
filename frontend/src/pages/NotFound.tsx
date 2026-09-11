@@ -1,17 +1,16 @@
 import { Link } from "react-router-dom";
-import { Brand } from "../components/ui";
+import Shell from "../components/Shell";
+import { Product } from "../components/ui";
 
 export default function NotFound() {
   return (
-    <div className="page page--centered">
-      <div className="card card--narrow">
-        <Brand />
-        <h1>Page not found</h1>
-        <p className="muted">That address does not exist in this portal.</p>
-        <Link className="btn btn--primary" to="/">
-          Back to the portal
-        </Link>
+    <Shell>
+      <Product />
+      <h1 className="screen-title">Page Not Found</h1>
+      <div className="section">
+        <p>That address does not exist in this portal.</p>
+        <Link to="/">Return to the portal</Link>
       </div>
-    </div>
+    </Shell>
   );
 }

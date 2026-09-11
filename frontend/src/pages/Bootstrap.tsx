@@ -3,7 +3,8 @@ import type { FormEvent } from "react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth";
-import { Banner, Brand } from "../components/ui";
+import Shell from "../components/Shell";
+import { Banner, Product } from "../components/ui";
 import type { BootstrapStatus } from "../types";
 
 interface Props {
@@ -66,13 +67,13 @@ export default function BootstrapPage({ status, onCompleted }: Props) {
   }
 
   return (
-    <div className="page page--centered">
-      <div className="card card--narrow">
-        <Brand subtitle="First-run setup" />
-        <h1>Create the administrator</h1>
-        <p className="muted">
+    <Shell>
+      <Product />
+      <h1 className="screen-title">First-Run Setup</h1>
+      <div className="section" style={{ maxWidth: 640 }}>
+        <p>
           This portal has no administrator yet. The account you create here owns user management
-          and file uploads. Once it exists, this page closes permanently.
+          and document uploads. Once it exists, this page closes permanently.
         </p>
 
         <Banner kind="error">{error}</Banner>
@@ -137,15 +138,17 @@ export default function BootstrapPage({ status, onCompleted }: Props) {
             </label>
           ) : null}
 
-          <button className="btn btn--primary btn--block" type="submit" disabled={busy}>
-            {busy ? "Creating administrator…" : "Create administrator & sign in"}
-          </button>
+          <div className="actions actions--inline">
+            <button className="btn" type="submit" disabled={busy}>
+              {busy ? "Creating administrator…" : "Create Administrator"}
+            </button>
+          </div>
         </form>
 
         <p className="footnote">
-          Already set up? <Link to="/admin/login">Go to the admin login</Link>
+          Already set up? <Link to="/admin/login">Administrator Login</Link>
         </p>
       </div>
-    </div>
+    </Shell>
   );
 }

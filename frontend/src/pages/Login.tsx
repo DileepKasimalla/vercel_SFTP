@@ -2,7 +2,8 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth";
-import { Banner, Brand } from "../components/ui";
+import Shell from "../components/Shell";
+import { Banner, Product } from "../components/ui";
 import type { BootstrapStatus, Role } from "../types";
 
 interface Props {
@@ -10,17 +11,9 @@ interface Props {
   status: BootstrapStatus | null;
 }
 
-const COPY: Record<Role, { heading: string; blurb: string; home: string }> = {
-  admin: {
-    heading: "Administrator login",
-    blurb: "Manage portal users and publish files to their dashboards.",
-    home: "/admin",
-  },
-  user: {
-    heading: "User login",
-    blurb: "Sign in with the credentials your administrator issued to you.",
-    home: "/dashboard",
-  },
+const COPY: Record<Role, { heading: string; home: string }> = {
+  admin: { heading: "Administrator Login", home: "/admin" },
+  user: { heading: "User Login", home: "/dashboard" },
 };
 
 export default function LoginPage({ role, status }: Props) {
@@ -54,55 +47,79 @@ export default function LoginPage({ role, status }: Props) {
     }
   }
 
+  function handleClear() {
+    setUsername("");
+    setPassword("");
+    setError(null);
+  }
+
   return (
-    <div className="page page--centered">
-      <div className={`card card--narrow ${role === "admin" ? "card--admin" : "card--user"}`}>
-        <Brand subtitle={role === "admin" ? "Administrator" : "User"} />
-        <h1>{copy.heading}</h1>
-        <p className="muted">{copy.blurb}</p>
+    <Shell>
+      <Product />
+      <h1 className="screen-title">{copy.heading}</h1>
 
-        <Banner kind="error">{error}</Banner>
+      <form onSubmit={handleSubmit} className="screen">
+        <div className="centered-form">
+          <div>
+            <Banner kind="error">{error}</Banner>
+            <table className="kv">
+              <tbody>
+                <tr>
+                  <th scope="row">
+                    <label htmlFor="login-user">User ID</label>
+                  </th>
+                  <td>
+                    <input
+                      id="login-user"
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      autoComplete="username"
+                      required
+                      autoFocus
+                    />
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row">
+                    <label htmlFor="login-password">Password</label>
+                  </th>
+                  <td>
+                    <input
+                      id="login-password"
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      autoComplete="current-password"
+                      required
+                    />
+                  </td>
+                </tr>
+                <tr>
+                  <th />
+                  <td>
+                    <div className="actions actions--inline">
+                      <button className="btn" type="submit" disabled={busy}>
+                        {busy ? "Signing in…" : "Login"}
+                      </button>
+                      <button className="btn" type="button" onClick={handleClear}>
+                        Clear
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
 
-        <form onSubmit={handleSubmit} className="form">
-          <label className="field">
-            <span>Username</span>
-            <input
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              autoComplete="username"
-              required
-              autoFocus
-            />
-          </label>
-          <label className="field">
-            <span>Password</span>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete="current-password"
-              required
-            />
-          </label>
-          <button className="btn btn--primary btn--block" type="submit" disabled={busy}>
-            {busy ? "Signing in…" : "Sign in"}
-          </button>
-        </form>
-
-        <p className="footnote">
-          {role === "admin" ? (
-            <>
-              Not an administrator? <Link to="/login">Use the user login</Link>
-            </>
-          ) : (
-            <>
-              Administrator? <Link to="/admin/login">Use the admin login</Link>
-            </>
-          )}
-          {" · "}
-          <Link to="/">Portal home</Link>
-        </p>
-      </div>
-    </div>
+            <p className="footnote">
+              {role === "admin" ? (
+                <Link to="/login">User Login</Link>
+              ) : (
+                <Link to="/admin/login">Administrator Login</Link>
+              )}
+            </p>
+          </div>
+        </div>
+      </form>
+    </Shell>
   );
 }

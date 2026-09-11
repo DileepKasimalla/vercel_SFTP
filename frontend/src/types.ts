@@ -10,6 +10,8 @@ export interface User {
   must_change_password: boolean;
   created_at: string;
   last_login_at: string | null;
+  /** Only present on the login response: the sign-in before this one. */
+  previous_login_at?: string | null;
 }
 
 export interface TokenResponse {

@@ -10,6 +10,7 @@ import type {
 } from "./types";
 
 const TOKEN_KEY = "sftp.token";
+const PREV_LOGIN_KEY = "sftp.previous_login";
 export const MAX_SERVERLESS_UPLOAD_BYTES = 4 * 1024 * 1024;
 
 export class ApiError extends Error {
@@ -24,7 +25,19 @@ export class ApiError extends Error {
 export const tokenStore = {
   get: () => localStorage.getItem(TOKEN_KEY),
   set: (token: string) => localStorage.setItem(TOKEN_KEY, token),
-  clear: () => localStorage.removeItem(TOKEN_KEY),
+  clear: () => {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(PREV_LOGIN_KEY);
+  },
+};
+
+/** The login before the current one, kept so the greeting survives a reload. */
+export const previousLoginStore = {
+  get: () => localStorage.getItem(PREV_LOGIN_KEY),
+  set: (iso: string | null | undefined) => {
+    if (iso) localStorage.setItem(PREV_LOGIN_KEY, iso);
+    else localStorage.removeItem(PREV_LOGIN_KEY);
+  },
 };
 
 async function request<T>(

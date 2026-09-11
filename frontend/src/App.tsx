@@ -40,7 +40,7 @@ export default function App() {
 
   if (loading) {
     return (
-      <div className="page page--centered">
+      <div className="page--centered">
         <Spinner label="Starting the portal" />
       </div>
     );

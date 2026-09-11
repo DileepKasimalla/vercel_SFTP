@@ -110,7 +110,7 @@ export default function UsersPanel({ users, loading, reload }: Props) {
 
   return (
     <>
-      <section className="panel">
+      <section className="section">
         <div className="panel__head">
           <div>
             <h2>Create a user</h2>
@@ -186,7 +186,7 @@ export default function UsersPanel({ users, loading, reload }: Props) {
         </form>
       </section>
 
-      <section className="panel">
+      <section className="section">
         <div className="panel__head">
           <div>
             <h2>Users</h2>

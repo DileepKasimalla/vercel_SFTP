@@ -134,7 +134,7 @@ export default function FilesPanel({ files, users, loading, reload }: Props) {
 
   return (
     <>
-      <section className="panel">
+      <section className="section">
         <div className="panel__head">
           <div>
             <h2>Upload files</h2>
@@ -255,7 +255,7 @@ export default function FilesPanel({ files, users, loading, reload }: Props) {
         </form>
       </section>
 
-      <section className="panel">
+      <section className="section">
         <div className="panel__head">
           <div>
             <h2>Published files</h2>
