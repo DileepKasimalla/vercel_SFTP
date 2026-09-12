@@ -175,7 +175,7 @@ app from folder storage to Vercel Blob with no code change.
 | `JWT_SECRET` | **yes** | Long random string. Changing it signs everyone out. |
 | `BOOTSTRAP_TOKEN` | recommended | When set, the bootstrap page also demands this value, so a stranger cannot claim the admin account on your public URL before you do. |
 | `JWT_EXPIRE_MINUTES` | no | Session length, default `480`. |
-| `MAX_UPLOAD_MB` | no | Per-file limit, default `4`. Keep it at or below `4` on Vercel. |
+| `MAX_UPLOAD_MB` | no | Per-file limit, default `50`. Note: Vercel serverless functions reject request bodies over ~4.5 MB, so on Vercel the effective cap is ~4 MB regardless of this value. |
 | `RETENTION_DAYS` | no | Days before a file is deleted, default `5`. |
 | `CRON_SECRET` | recommended | Vercel sets this when you add a cron job; the cleanup endpoint requires it (an admin token also works). |
 | `DOWNLOAD_TOKEN_SECONDS` | no | Download-link lifetime, default `120`. |
