@@ -172,9 +172,15 @@ def client_upload_token(pathname: str, max_bytes: int) -> str:
 def head_blob(url: str) -> BlobInfo:
     """Look a blob up by URL, refusing anything outside our store or the
     uploads/ prefix so a registration call cannot point at a foreign object."""
-    store_id = _store_id(settings.blob_token or "")
-    host = urlparse(url).hostname or ""
-    if not store_id or not host.endswith(".blob.vercel-storage.com") or store_id not in host:
+    # Blob URLs look like https://<storeid>.public.blob.vercel-storage.com/...;
+    # the store id in the token is mixed-case, hostnames are lowercase.
+    store_id = _store_id(settings.blob_token or "").lower()
+    host = (urlparse(url).hostname or "").lower()
+    if (
+        not store_id
+        or not host.endswith(".blob.vercel-storage.com")
+        or host.split(".", 1)[0] != store_id
+    ):
         raise ValueError("That URL is not in this portal's blob store")
 
     response = httpx.get(

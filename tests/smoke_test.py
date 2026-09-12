@@ -439,18 +439,19 @@ def main() -> None:
     # Flip the settings to blob for the rest of the section; nothing below talks
     # to Vercel, the network calls are stubbed.
     saved_backend, saved_token = _settings.storage_backend, _settings.blob_token
-    _settings.storage_backend, _settings.blob_token = "blob", "vercel_blob_rw_teststore_secret"
+    # Mixed-case store id on purpose: real tokens are, while blob hostnames are lowercase.
+    _settings.storage_backend, _settings.blob_token = "blob", "vercel_blob_rw_TestStore_secret"
     saved_head, saved_delete = _storage.head_blob, _storage.delete
     try:
         r = client.post("/api/admin/files/client-token", headers=admin, json=token_event)
         check("client token minted", r.status_code == 200, r.text)
         client_token = r.json()["clientToken"]
-        check("token carries the store id", client_token.startswith("vercel_blob_client_teststore_"))
+        check("token carries the store id", client_token.startswith("vercel_blob_client_TestStore_"))
 
         signature, payload_b64 = base64.b64decode(client_token.split("_", 4)[4]).decode().split(".")
         claims = json.loads(base64.b64decode(payload_b64))
         expected = hmac.new(
-            b"vercel_blob_rw_teststore_secret", payload_b64.encode(), hashlib.sha256
+            b"vercel_blob_rw_TestStore_secret", payload_b64.encode(), hashlib.sha256
         ).hexdigest()
         check("token signature verifies with the read-write token", hmac.compare_digest(signature, expected))
         check("token pins the pathname", claims["pathname"] == "uploads/big.zip", claims)
