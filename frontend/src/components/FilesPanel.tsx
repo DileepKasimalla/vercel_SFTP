@@ -1,6 +1,6 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
-import { api, downloadFile, MAX_SERVERLESS_UPLOAD_BYTES } from "../api";
+import { api, downloadFile } from "../api";
 import {
   Banner,
   EmptyState,
@@ -10,7 +10,7 @@ import {
   formatDate,
   formatRemaining,
 } from "./ui";
-import type { PortalFile, User } from "../types";
+import type { BootstrapStatus, PortalFile, User } from "../types";
 
 interface Props {
   files: PortalFile[];
@@ -30,7 +30,20 @@ export default function FilesPanel({ files, users, loading, reload }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<string | null>(null);
   const [rowBusy, setRowBusy] = useState<string | null>(null);
+  const [policy, setPolicy] = useState<Pick<BootstrapStatus, "max_upload_mb" | "direct_upload">>({
+    max_upload_mb: 50,
+    direct_upload: false,
+  });
+
+  useEffect(() => {
+    // The size cap and the upload route both depend on how the server is deployed.
+    api
+      .bootstrapStatus()
+      .then((status) => setPolicy(status))
+      .catch(() => undefined);
+  }, []);
 
   function addFiles(incoming: FileList | null) {
     if (!incoming?.length) return;
@@ -70,22 +83,40 @@ export default function FilesPanel({ files, users, loading, reload }: Props) {
       setError("Pick at least one user, or share the upload with everyone.");
       return;
     }
-    const oversized = selected.find((file) => file.size > MAX_SERVERLESS_UPLOAD_BYTES);
+    const maxBytes = policy.max_upload_mb * 1024 * 1024;
+    const oversized = selected.find((file) => file.size > maxBytes);
     if (oversized) {
-      setError(`${oversized.name} is larger than the 4 MB Vercel upload limit.`);
+      setError(`${oversized.name} is larger than the ${policy.max_upload_mb} MB upload limit.`);
       return;
     }
 
     setBusy(true);
     try {
-      const responses = [];
-      for (const file of selected) {
-        responses.push(
-          await api.admin.upload([file], notes, shareWithAll ? [] : assignedIds),
-        );
+      const assigned = shareWithAll ? [] : assignedIds;
+      const uploaded: PortalFile[] = [];
+      const failed: { name: string; error: string }[] = [];
+      for (const [index, file] of selected.entries()) {
+        const label = `${index + 1}/${selected.length} ${file.name}`;
+        setProgress(`Uploading ${label}…`);
+        try {
+          if (policy.direct_upload) {
+            uploaded.push(
+              await api.admin.uploadDirect(file, notes, assigned, (pct) =>
+                setProgress(`Uploading ${label} — ${Math.round(pct)}%`),
+              ),
+            );
+          } else {
+            const response = await api.admin.upload([file], notes, assigned);
+            uploaded.push(...response.uploaded);
+            failed.push(...response.failed);
+          }
+        } catch (err) {
+          failed.push({ name: file.name, error: (err as Error).message });
+        }
       }
-      const uploaded = responses.flatMap((response) => response.uploaded);
-      const failed = responses.flatMap((response) => response.failed);
+      if (!uploaded.length && failed.length) {
+        throw new Error(failed.map((f) => `${f.name}: ${f.error}`).join("; "));
+      }
       const parts = [`Uploaded ${uploaded.length} file(s).`];
       if (failed.length) {
         parts.push(
@@ -100,6 +131,7 @@ export default function FilesPanel({ files, users, loading, reload }: Props) {
       setError((err as Error).message);
     } finally {
       setBusy(false);
+      setProgress(null);
     }
   }
 
@@ -252,6 +284,7 @@ export default function FilesPanel({ files, users, loading, reload }: Props) {
           <button className="btn btn--primary" type="submit" disabled={busy}>
             {busy ? "Uploading…" : `Upload ${selected.length || ""} file(s)`.trim()}
           </button>
+          {progress ? <p className="footnote muted">{progress}</p> : null}
         </form>
       </section>
 

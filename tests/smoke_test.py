@@ -7,6 +7,9 @@ Runs against SQLite plus local-folder storage, so it needs no external services.
 """
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 import json
 import os
 import shutil
@@ -418,6 +421,119 @@ def main() -> None:
         "and it is gone from the admin list",
         "report.pdf" not in [f["original_name"] for f in client.get("/api/admin/files", headers=admin).json()],
     )
+
+    print("\n[14] direct-to-blob uploads")
+    from backend import storage as _storage
+    from backend.config import settings as _settings
+
+    token_event = {"type": "blob.generate-client-token", "payload": {"pathname": "uploads/big.zip"}}
+    check(
+        "client token refused on the local backend",
+        client.post("/api/admin/files/client-token", headers=admin, json=token_event).status_code == 400,
+    )
+    check(
+        "users cannot mint client tokens",
+        client.post("/api/admin/files/client-token", headers=alice_h, json=token_event).status_code == 403,
+    )
+
+    # Flip the settings to blob for the rest of the section; nothing below talks
+    # to Vercel, the network calls are stubbed.
+    saved_backend, saved_token = _settings.storage_backend, _settings.blob_token
+    _settings.storage_backend, _settings.blob_token = "blob", "vercel_blob_rw_teststore_secret"
+    saved_head, saved_delete = _storage.head_blob, _storage.delete
+    try:
+        r = client.post("/api/admin/files/client-token", headers=admin, json=token_event)
+        check("client token minted", r.status_code == 200, r.text)
+        client_token = r.json()["clientToken"]
+        check("token carries the store id", client_token.startswith("vercel_blob_client_teststore_"))
+
+        signature, payload_b64 = base64.b64decode(client_token.split("_", 4)[4]).decode().split(".")
+        claims = json.loads(base64.b64decode(payload_b64))
+        expected = hmac.new(
+            b"vercel_blob_rw_teststore_secret", payload_b64.encode(), hashlib.sha256
+        ).hexdigest()
+        check("token signature verifies with the read-write token", hmac.compare_digest(signature, expected))
+        check("token pins the pathname", claims["pathname"] == "uploads/big.zip", claims)
+        check(
+            "token caps the size at MAX_UPLOAD_MB",
+            claims["maximumSizeInBytes"] == _settings.max_upload_mb * 1024 * 1024,
+            claims,
+        )
+        check(
+            "token refused for a pathname outside uploads/",
+            client.post(
+                "/api/admin/files/client-token",
+                headers=admin,
+                json={"type": "blob.generate-client-token", "payload": {"pathname": "../etc/passwd"}},
+            ).status_code
+            == 400,
+        )
+
+        blob_url = "https://teststore.public.blob.vercel-storage.com/uploads/big-abc123.zip"
+        _storage.head_blob = lambda url: _storage.BlobInfo(
+            url=url,
+            download_url=url + "?download=1",
+            pathname="uploads/big-abc123.zip",
+            size_bytes=40 * 1024 * 1024,
+            content_type="application/zip",
+        )
+        r = client.post(
+            "/api/admin/files/register",
+            headers=admin,
+            json={
+                "url": blob_url,
+                "original_name": "big.zip",
+                "notes": "direct",
+                "assigned_user_ids": [alice["id"]],
+            },
+        )
+        check("direct upload registered", r.status_code == 201, r.text)
+        big = r.json()
+        check("registered size comes from Blob, not the browser", big["size_bytes"] == 40 * 1024 * 1024, big)
+        check("registered upload is targeted", big["assigned_user_ids"] == [alice["id"]], big)
+        r = client.post(
+            "/api/admin/files/register",
+            headers=admin,
+            json={"url": blob_url, "original_name": "big.zip", "assigned_user_ids": []},
+        )
+        check("registering the same blob twice is rejected", r.status_code == 409, r.text)
+
+        deleted: list[str] = []
+        _storage.delete = lambda backend, key: deleted.append(key)
+        _storage.head_blob = lambda url: _storage.BlobInfo(
+            url=url,
+            download_url=url,
+            pathname="uploads/huge.bin",
+            size_bytes=_settings.max_upload_mb * 1024 * 1024 + 1,
+            content_type="application/octet-stream",
+        )
+        r = client.post(
+            "/api/admin/files/register",
+            headers=admin,
+            json={"url": blob_url + "2", "original_name": "huge.bin"},
+        )
+        check("oversized blob is rejected", r.status_code == 400 and "limit" in r.text, r.text)
+        check("and removed from the store", deleted == [blob_url + "2"], deleted)
+
+        _storage.head_blob = saved_head
+        r = client.post(
+            "/api/admin/files/register",
+            headers=admin,
+            json={"url": "https://evil.example.com/file.bin", "original_name": "file.bin"},
+        )
+        check("a URL outside our store is refused before any lookup", r.status_code == 400, r.text)
+
+        r = client.post("/api/files/" + big["id"] + "/download-link", headers=alice_h)
+        check("alice gets a download link for the direct upload", r.status_code == 200, r.text)
+        r = client.get(r.json()["url"], follow_redirects=False)
+        check(
+            "blob download redirects to the blob URL",
+            r.status_code == 307 and r.headers["location"].startswith(blob_url),
+            dict(r.headers),
+        )
+    finally:
+        _settings.storage_backend, _settings.blob_token = saved_backend, saved_token
+        _storage.head_blob, _storage.delete = saved_head, saved_delete
 
     print("\n" + str(len(PASSED)) + " checks passed.\n")
 

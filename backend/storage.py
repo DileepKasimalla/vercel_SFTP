@@ -9,15 +9,25 @@ BLOB_READ_WRITE_TOKEN is present, otherwise "local".
 The blob calls mirror what @vercel/blob sends on the wire: PUT to
 "<api>/?pathname=<url-encoded key>" with the store id passed as its own
 header alongside the bearer token.
+
+Large files never pass through the API function (Vercel caps request bodies
+at ~4.5 MB). Instead the browser uploads straight to Blob with a short-lived
+*client token* minted here - see client_upload_token() - and then asks the API
+to register the finished object, which head_blob() verifies.
 """
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
+import json
 import re
 import secrets
+import time
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 import httpx
 
@@ -26,6 +36,10 @@ from .config import settings
 BLOB_API = "https://vercel.com/api/blob"
 BLOB_API_VERSION = "12"
 _UNSAFE = re.compile(r"[^A-Za-z0-9._-]+")
+# Pathnames the browser may ask a client token for: one flat, already-sanitised
+# name under uploads/. Blob appends a random suffix, so collisions are its problem.
+CLIENT_UPLOAD_PATH = re.compile(r"uploads/[A-Za-z0-9._-]{1,180}")
+CLIENT_TOKEN_SECONDS = 15 * 60
 
 
 class BlobError(RuntimeError):
@@ -37,6 +51,15 @@ class SavedObject:
     backend: str
     storage_key: str
     download_url: str | None
+    size_bytes: int
+    content_type: str
+
+
+@dataclass(slots=True)
+class BlobInfo:
+    url: str
+    download_url: str
+    pathname: str
     size_bytes: int
     content_type: str
 
@@ -118,6 +141,59 @@ def _save_blob(key: str, data: bytes, content_type: str) -> SavedObject:
         download_url=body.get("downloadUrl") or body["url"],
         size_bytes=len(data),
         content_type=content_type,
+    )
+
+
+def client_upload_token(pathname: str, max_bytes: int) -> str:
+    """Mint a Vercel Blob client token: the same "vercel_blob_client_<store>_<b64>"
+    string @vercel/blob's generateClientTokenFromReadWriteToken() produces, so the
+    browser can PUT to Blob directly via @vercel/blob/client. The constraints ride
+    inside the signed payload, so Blob itself enforces the size cap and the path."""
+    token = settings.blob_token or ""
+    store_id = _store_id(token)
+    if not store_id:
+        raise BlobError("BLOB_READ_WRITE_TOKEN is missing or malformed")
+    if not CLIENT_UPLOAD_PATH.fullmatch(pathname):
+        raise ValueError("Invalid upload pathname")
+
+    claims = {
+        "pathname": pathname,
+        "maximumSizeInBytes": max_bytes,
+        "addRandomSuffix": True,
+        "cacheControlMaxAge": 31536000,
+        "validUntil": int(time.time() * 1000) + CLIENT_TOKEN_SECONDS * 1000,
+    }
+    payload = base64.b64encode(json.dumps(claims, separators=(",", ":")).encode()).decode()
+    signature = hmac.new(token.encode(), payload.encode(), hashlib.sha256).hexdigest()
+    secured = base64.b64encode(f"{signature}.{payload}".encode()).decode()
+    return f"vercel_blob_client_{store_id}_{secured}"
+
+
+def head_blob(url: str) -> BlobInfo:
+    """Look a blob up by URL, refusing anything outside our store or the
+    uploads/ prefix so a registration call cannot point at a foreign object."""
+    store_id = _store_id(settings.blob_token or "")
+    host = urlparse(url).hostname or ""
+    if not store_id or not host.endswith(".blob.vercel-storage.com") or store_id not in host:
+        raise ValueError("That URL is not in this portal's blob store")
+
+    response = httpx.get(
+        f"{BLOB_API}?url={quote(url, safe='')}",
+        headers=_blob_headers(),
+        timeout=30.0,
+    )
+    if response.is_error:
+        raise _blob_error(response)
+    body = response.json()
+    pathname = body.get("pathname") or ""
+    if not pathname.startswith("uploads/"):
+        raise ValueError("That blob was not created through the upload flow")
+    return BlobInfo(
+        url=body["url"],
+        download_url=body.get("downloadUrl") or body["url"],
+        pathname=pathname,
+        size_bytes=int(body.get("size") or 0),
+        content_type=body.get("contentType") or "application/octet-stream",
     )
 
 

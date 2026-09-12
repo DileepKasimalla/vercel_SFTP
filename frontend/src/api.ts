@@ -1,3 +1,4 @@
+import { upload as blobUpload } from "@vercel/blob/client";
 import type {
   BootstrapStatus,
   DownloadLink,
@@ -11,7 +12,6 @@ import type {
 
 const TOKEN_KEY = "sftp.token";
 const PREV_LOGIN_KEY = "sftp.previous_login";
-export const MAX_SERVERLESS_UPLOAD_BYTES = 4 * 1024 * 1024;
 
 export class ApiError extends Error {
   status: number;
@@ -170,10 +170,51 @@ export const api = {
       return request<UploadResult>("/admin/files", { method: "POST", body: form });
     },
 
+    /**
+     * Direct-to-Blob upload: the API only mints a signed client token and,
+     * once the browser has PUT the bytes to Vercel Blob itself, records the
+     * finished object. Bypasses the ~4.5 MB serverless request-body cap.
+     */
+    uploadDirect: async (
+      file: File,
+      notes: string,
+      assignedUserIds: string[],
+      onProgress?: (percentage: number) => void,
+    ): Promise<PortalFile> => {
+      const token = tokenStore.get();
+      const blob = await blobUpload(`uploads/${safePathname(file.name)}`, file, {
+        access: "public",
+        handleUploadUrl: "/api/admin/files/client-token",
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        contentType: file.type || "application/octet-stream",
+        onUploadProgress: onProgress ? (event) => onProgress(event.percentage) : undefined,
+      });
+      return request<PortalFile>("/admin/files/register", {
+        method: "POST",
+        body: JSON.stringify({
+          url: blob.url,
+          original_name: file.name,
+          notes: notes.trim() || null,
+          assigned_user_ids: assignedUserIds,
+        }),
+      });
+    },
+
     deleteFile: (fileId: string) =>
       request<{ detail: string }>(`/admin/files/${fileId}`, { method: "DELETE" }),
   },
 };
+
+/** Mirrors backend/storage.py safe_filename(): the pathname the token is minted
+ * for has to satisfy the same allow-list, and Blob adds a random suffix. */
+function safePathname(name: string): string {
+  const ascii = name
+    .normalize("NFKD")
+    .replace(/[^\x00-\x7F]/g, "")
+    .replace(/[^A-Za-z0-9._-]+/g, "_")
+    .replace(/^[._]+|[._]+$/g, "");
+  return (ascii || "file").slice(0, 180);
+}
 
 /** Opens a file using a short-lived, single-file download token. */
 export async function downloadFile(fileId: string): Promise<void> {

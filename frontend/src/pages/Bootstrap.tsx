@@ -57,6 +57,8 @@ export default function BootstrapPage({ status, onCompleted }: Props) {
         needs_bootstrap: false,
         requires_token: status?.requires_token ?? false,
         storage_backend: status?.storage_backend ?? "local",
+        max_upload_mb: status?.max_upload_mb ?? 50,
+        direct_upload: status?.direct_upload ?? false,
       });
       navigate("/admin", { replace: true });
     } catch (err) {

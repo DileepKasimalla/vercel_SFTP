@@ -13,10 +13,13 @@ from .db import get_db
 from .models import FileAssignment, StoredFile, User
 from .routes_files import serialize
 from .schemas import (
+    ClientTokenRequest,
+    ClientTokenResponse,
     CreateUserRequest,
     FileOut,
     MessageResponse,
     PasswordIssued,
+    RegisterUploadRequest,
     ResetPasswordRequest,
     UpdateUserRequest,
     UploadResult,
@@ -165,20 +168,14 @@ async def upload_files(
             failed.append({"name": upload.filename, "error": "Storage error: {}".format(exc)})
             continue
 
-        record = StoredFile(
+        record = _create_record(
+            db,
+            admin,
             original_name=upload.filename or saved.storage_key.rsplit("/", 1)[-1],
-            content_type=saved.content_type,
-            size_bytes=saved.size_bytes,
-            backend=saved.backend,
-            storage_key=saved.storage_key,
-            download_url=saved.download_url,
+            saved=saved,
             notes=notes,
-            uploaded_by_id=admin.id,
+            target_ids=target_ids,
         )
-        record.assignments = [FileAssignment(user_id=uid) for uid in target_ids]
-        db.add(record)
-        db.commit()
-        db.refresh(record)
         uploaded.append(serialize(record))
 
     if not uploaded and failed:
@@ -187,6 +184,116 @@ async def upload_files(
             detail="; ".join(f["name"] + ": " + f["error"] for f in failed),
         )
     return UploadResult(uploaded=uploaded, failed=failed)
+
+
+# Direct-to-Blob uploads, used whenever the blob backend is active. The API
+# function never sees the bytes (Vercel rejects request bodies over ~4.5 MB):
+# the browser fetches a signed client token, PUTs the file to Blob itself, then
+# registers the finished object here.
+
+
+@router.post("/files/client-token", response_model=ClientTokenResponse)
+def client_upload_token(payload: ClientTokenRequest) -> ClientTokenResponse:
+    if not settings.is_blob:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Direct uploads are only available with the Vercel Blob backend",
+        )
+    try:
+        token = storage.client_upload_token(
+            payload.payload.pathname, settings.max_upload_mb * 1024 * 1024
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from None
+    except storage.BlobError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)
+        ) from None
+    return ClientTokenResponse(clientToken=token)
+
+
+@router.post("/files/register", response_model=FileOut, status_code=status.HTTP_201_CREATED)
+def register_upload(
+    payload: RegisterUploadRequest,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> FileOut:
+    if not settings.is_blob:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Direct uploads are only available with the Vercel Blob backend",
+        )
+    target_ids = _validate_assignment_ids(db, payload.assigned_user_ids)
+
+    # Never trust the browser's description of the object: ask Blob what it
+    # actually stored, which also proves the URL belongs to this store.
+    try:
+        info = storage.head_blob(payload.url)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from None
+    except storage.BlobError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Upload not found: {}".format(exc)
+        ) from None
+
+    if db.scalar(select(StoredFile.id).where(StoredFile.storage_key == info.url)):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="That upload is already registered"
+        )
+    if info.size_bytes == 0 or info.size_bytes > settings.max_upload_mb * 1024 * 1024:
+        try:
+            storage.delete("blob", info.url)
+        except Exception:  # noqa: BLE001 - best effort, the object is simply not registered
+            pass
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File is empty"
+            if info.size_bytes == 0
+            else "Exceeds the {} MB limit".format(settings.max_upload_mb),
+        )
+
+    saved = storage.SavedObject(
+        backend="blob",
+        storage_key=info.url,
+        download_url=info.download_url,
+        size_bytes=info.size_bytes,
+        content_type=info.content_type,
+    )
+    record = _create_record(
+        db,
+        admin,
+        original_name=payload.original_name,
+        saved=saved,
+        notes=payload.notes,
+        target_ids=target_ids,
+    )
+    return serialize(record)
+
+
+def _create_record(
+    db: Session,
+    admin: User,
+    *,
+    original_name: str,
+    saved: storage.SavedObject,
+    notes: str | None,
+    target_ids: list[str],
+) -> StoredFile:
+    record = StoredFile(
+        original_name=original_name,
+        content_type=saved.content_type,
+        size_bytes=saved.size_bytes,
+        backend=saved.backend,
+        storage_key=saved.storage_key,
+        download_url=saved.download_url,
+        notes=notes,
+        uploaded_by_id=admin.id,
+    )
+    record.assignments = [FileAssignment(user_id=uid) for uid in target_ids]
+    db.add(record)
+    db.commit()
+    db.refresh(record)
+    return record
 
 
 @router.get("/files", response_model=list[FileOut])
@@ -238,6 +345,10 @@ def _parse_assignment_ids(db: Session, raw: str | None) -> list[str]:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="assigned_user_ids must be a JSON array of user ids",
         )
+    return _validate_assignment_ids(db, ids)
+
+
+def _validate_assignment_ids(db: Session, ids: list[str]) -> list[str]:
     ids = list(dict.fromkeys(ids))
     if not ids:
         return []

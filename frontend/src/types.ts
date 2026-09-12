@@ -25,6 +25,9 @@ export interface BootstrapStatus {
   needs_bootstrap: boolean;
   requires_token: boolean;
   storage_backend: string;
+  max_upload_mb: number;
+  /** Upload straight to Vercel Blob instead of through the API function. */
+  direct_upload: boolean;
 }
 
 export interface PortalFile {

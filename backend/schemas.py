@@ -10,6 +10,10 @@ class BootstrapStatus(BaseModel):
     needs_bootstrap: bool
     requires_token: bool
     storage_backend: str
+    max_upload_mb: int
+    # True when the browser should upload straight to Vercel Blob (see
+    # /admin/files/client-token) instead of posting the bytes to this API.
+    direct_upload: bool
 
 
 class BootstrapRequest(BaseModel):
@@ -108,6 +112,34 @@ class CleanupResult(BaseModel):
 class UploadResult(BaseModel):
     uploaded: list[FileOut]
     failed: list[dict]
+
+
+class ClientTokenPayload(BaseModel):
+    pathname: str
+    clientPayload: str | None = None
+    multipart: bool = False
+
+
+class ClientTokenRequest(BaseModel):
+    """The event @vercel/blob/client's upload() posts to its handleUploadUrl."""
+
+    type: Literal["blob.generate-client-token"]
+    payload: ClientTokenPayload
+
+
+class ClientTokenResponse(BaseModel):
+    type: Literal["blob.generate-client-token"] = "blob.generate-client-token"
+    clientToken: str
+
+
+class RegisterUploadRequest(BaseModel):
+    """Sent once the browser has finished a direct-to-Blob upload."""
+
+    url: str = Field(max_length=2048)
+    original_name: str = Field(min_length=1, max_length=255)
+    notes: str | None = Field(default=None, max_length=2000)
+    # Empty list shares the file with everyone.
+    assigned_user_ids: list[str] = Field(default_factory=list)
 
 
 class DownloadLink(BaseModel):

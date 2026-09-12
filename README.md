@@ -175,7 +175,7 @@ app from folder storage to Vercel Blob with no code change.
 | `JWT_SECRET` | **yes** | Long random string. Changing it signs everyone out. |
 | `BOOTSTRAP_TOKEN` | recommended | When set, the bootstrap page also demands this value, so a stranger cannot claim the admin account on your public URL before you do. |
 | `JWT_EXPIRE_MINUTES` | no | Session length, default `480`. |
-| `MAX_UPLOAD_MB` | no | Per-file limit, default `50`. Note: Vercel serverless functions reject request bodies over ~4.5 MB, so on Vercel the effective cap is ~4 MB regardless of this value. |
+| `MAX_UPLOAD_MB` | no | Per-file limit, default `50`. With Blob storage the browser uploads straight to Blob, so this can exceed Vercel's 4.5 MB function body cap. |
 | `RETENTION_DAYS` | no | Days before a file is deleted, default `5`. |
 | `CRON_SECRET` | recommended | Vercel sets this when you add a cron job; the cleanup endpoint requires it (an admin token also works). |
 | `DOWNLOAD_TOKEN_SECONDS` | no | Download-link lifetime, default `120`. |
@@ -203,11 +203,16 @@ You land on `/bootstrap`. Create the administrator, and the portal is live.
 
 ## Things worth knowing
 
-**Upload size on Vercel.** A serverless function's request body is capped at **4.5 MB**.
-The browser therefore uploads each file separately and rejects files over **4 MB**, leaving
-room for multipart and form-field overhead. Locally the limit is whatever you set. To move
-larger files on Vercel you need client-side direct uploads to Blob (`@vercel/blob/client`),
-which would replace the `POST /api/admin/files` handler with a token-issuing endpoint.
+**Upload size on Vercel.** A serverless function's request body is capped at **4.5 MB**,
+so with Blob storage the bytes never pass through the API. The browser asks
+`POST /api/admin/files/client-token` for a signed Blob client token (minted in
+`backend/storage.py` with the same HMAC scheme as `@vercel/blob`, pinned to one
+`uploads/…` pathname and to `MAX_UPLOAD_MB`), PUTs the file straight to Blob via
+`@vercel/blob/client`, then calls `POST /api/admin/files/register` with the blob URL. The
+API looks the object up in Blob before recording it — the size and content type come from
+Blob, not the browser — and refuses URLs outside its own store. With local-folder storage
+the browser still posts the file to `POST /api/admin/files`; `GET /api/bootstrap/status`
+tells it which route to use and the current limit.
 
 **Downloads.** A browser navigation cannot carry an `Authorization` header, so the client
 first calls `POST /api/files/{id}/download-link`, which checks access and returns a URL
@@ -256,6 +261,8 @@ hand.
 | `POST` | `/api/admin/users/{id}/reset-password` | admin | Reset, returns the password once |
 | `DELETE` | `/api/admin/users/{id}` | admin | Delete a user |
 | `GET` | `/api/admin/files` | admin | Every published file |
-| `POST` | `/api/admin/files` | admin | Multipart upload of one or many files |
+| `POST` | `/api/admin/files` | admin | Multipart upload of one or many files (local storage) |
+| `POST` | `/api/admin/files/client-token` | admin | Mint a Vercel Blob client token for a direct browser upload |
+| `POST` | `/api/admin/files/register` | admin | Record a finished direct-to-Blob upload |
 | `DELETE` | `/api/admin/files/{id}` | admin | Delete a file and its stored object |
 | `GET`/`POST` | `/api/maintenance/cleanup` | cron secret or admin | Delete every file past its retention window |

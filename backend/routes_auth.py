@@ -37,6 +37,8 @@ def bootstrap_status(db: Session = Depends(get_db)) -> BootstrapStatus:
         needs_bootstrap=_admin_count(db) == 0,
         requires_token=bool(settings.bootstrap_token),
         storage_backend=settings.storage_backend,
+        max_upload_mb=settings.max_upload_mb,
+        direct_upload=settings.is_blob,
     )
 
 
